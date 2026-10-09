@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import type { Advisor, Board, Message, Session } from "@/lib/types";
+import { latestCouncilContributions } from "@/lib/playback";
 
 type StatePayload = {
   sessions: Session[];
@@ -96,32 +97,6 @@ function messageAdvisor(message: Message | undefined, advisors: Advisor[]) {
       advisor.id.toLowerCase() === speaker ||
       advisor.name.toLowerCase() === speaker,
   );
-}
-
-function latestCouncilContributions(
-  messages: Message[],
-  invited: string[] = [],
-) {
-  let lastUserIndex = -1;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.speaker.toLowerCase() === "user") {
-      lastUserIndex = index;
-      break;
-    }
-  }
-
-  if (lastUserIndex >= 0) {
-    const afterLastUser = messages
-      .slice(lastUserIndex + 1)
-      .filter((message) => message.speaker.toLowerCase() !== "user");
-    if (afterLastUser.length || !invited.length) return afterLastUser;
-  }
-  if (!invited.length) return [];
-
-  const invitedIds = new Set(invited.map((id) => id.toLowerCase()));
-  return messages
-    .filter((message) => invitedIds.has(message.speaker.toLowerCase()))
-    .slice(-invited.length);
 }
 
 function formatTime(value: string) {
@@ -246,12 +221,8 @@ export default function Home() {
     activeSession as (Session & { lastTurn?: CouncilTurn }) | undefined
   )?.lastTurn;
   const replayContributions = useMemo(
-    () =>
-      latestCouncilContributions(
-        activeSession?.messages ?? [],
-        lastTurn?.invited,
-      ),
-    [activeSession?.messages, lastTurn?.invited],
+    () => latestCouncilContributions(activeSession?.messages ?? []),
+    [activeSession?.messages],
   );
 
   const releaseElevenAudio = useCallback(() => {

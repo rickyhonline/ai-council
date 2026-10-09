@@ -108,7 +108,7 @@ export async function discuss(
     ...common,
     maxOutputTokens: 2200,
     system: principles,
-    prompt: `Synthesize these independent contributions into concise actionable options for the user, surface real disagreements and uncertainty, and ask at most one useful next question. Do not pretend all advisors agree. Collect up to a few new whiteboard items; do not rewrite existing items or declare new decisions on behalf of the user.\nSaved context: ${context}\nUser: ${text}\nContributions: ${JSON.stringify(contributions)}`,
+    prompt: `Synthesize ONLY the CURRENT ROUND CONTRIBUTIONS below into concise actionable options for the user, surface real disagreements and uncertainty, and ask at most one useful next question. Saved history describes earlier rounds; do not count earlier advisors as contributors to this round. The exact current contributor IDs are ${JSON.stringify(contributions.map((entry) => entry.speaker))}, with ${contributions.length} independent contribution(s). Do not pretend all advisors agree. Collect up to a few new whiteboard items; do not rewrite existing items or declare new decisions on behalf of the user.\nSAVED HISTORY AND BOARD: ${context}\nLATEST USER: ${text}\nCURRENT ROUND CONTRIBUTIONS: ${JSON.stringify(contributions)}`,
     output: Output.object({ schema: synthesisSchema }),
   });
   return {
