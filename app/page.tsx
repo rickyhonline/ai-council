@@ -205,6 +205,9 @@ export default function Home() {
   const selectedAdvisor = advisors.find(
     (advisor) => advisor.id === selectedAdvisorId,
   ) as VoiceAdvisor | undefined;
+  const featuredAdvisor = activeContribution
+    ? contributionAdvisor
+    : selectedAdvisor;
   const selectedVoiceURI = selectedAdvisor?.voiceURI ?? "";
   const selectedVoiceAvailable =
     !selectedVoiceURI ||
@@ -838,7 +841,7 @@ export default function Home() {
           </span>
           <div>
             <h1>AI Council</h1>
-            <p>Think in good company.</p>
+            <p>Council meeting</p>
           </div>
         </div>
         <div className="session-tools">
@@ -930,104 +933,179 @@ export default function Home() {
         </section>
       )}
 
-      <p className="council-disclosure">
-        AI interpretations inspired by these figures; not the real people or
-        their endorsements. Starter perspectives are generated and have not yet
-        been source-researched.
-      </p>
       <div className="workspace">
-        <section className="room-panel" aria-label="Council room">
-          <div className="room-ceiling">
-            <span />
-            <span />
-            <span />
-          </div>
-          <div className="room-heading">
-            <div>
-              <span className="eyebrow">Council chamber</span>
-              <h2>{activeSession?.title ?? "Start a new session"}</h2>
-            </div>
-            <span
-              className={`room-status ${sending || playbackActive ? "thinking" : ""}`}
-            >
-              <span />{" "}
-              {sending
-                ? "Council is thinking"
-                : playbackActive
-                  ? "Council is responding"
-                  : "Room ready"}
-            </span>
-          </div>
-
-          <div className="council-stage">
-            <div
-              className="advisor-ring"
-              role="group"
-              aria-label="Council advisors"
-            >
-              {advisors.map((advisor, index) => {
-                const selected = advisor.id === selectedAdvisorId;
-                const presenting = advisor.id === contributionAdvisor?.id;
-                const speaking = advisor.id === speakerId;
-                return (
-                  <button
-                    key={advisor.id}
-                    type="button"
-                    className={`advisor-seat seat-${index + 1} ${selected ? "selected" : ""} ${presenting ? "presenting" : ""} ${speaking ? "speaking" : ""}`}
-                    style={
-                      {
-                        "--advisor-color": advisor.color,
-                      } as React.CSSProperties
-                    }
-                    onClick={() => selectAdvisor(advisor)}
-                    aria-pressed={selected}
-                    aria-label={`${selected ? "Stop addressing" : "Address"} ${advisor.name}, ${advisor.role}`}
-                  >
-                    {presenting && activeContribution && (
-                      <span className="speech-bubble">
-                        {activeContribution.text}
-                      </span>
-                    )}
-                    <AdvisorPortrait advisor={advisor} />
-                    <span className="advisor-copy">
-                      <strong>{advisor.name}</strong>
-                      <small>{advisor.role}</small>
-                    </span>
-                    <span className="advisor-state">
-                      {speaking
-                        ? "Speaking"
-                        : presenting
-                          ? "Presenting"
-                          : selected
-                            ? "Selected"
-                            : "Invite"}
-                    </span>
-                  </button>
-                );
-              })}
-              {!advisors.length && (
-                <p className="empty-advisors">
-                  Advisor configuration could not be loaded.
-                </p>
-              )}
-            </div>
-
-            {activeContribution && !contributionAdvisor && (
-              <div className="facilitator-bubble" role="status">
-                <strong>Council facilitator</strong>
-                <span>{activeContribution.text}</span>
+        <section className="shared-stage" aria-label="Shared whiteboard">
+          <section className="whiteboard-card">
+            <div className="card-header">
+              <div>
+                <span className="eyebrow">Shared workspace</span>
+                <h2>Whiteboard</h2>
               </div>
-            )}
-
-            <div className="council-table" aria-hidden="true">
-              <div className="table-inlay">
-                <span className="table-star">
+              <div className="save-state" aria-live="polite">
+                {boardNotice}
+              </div>
+            </div>
+            <div className="board-scroll">
+              <label className="board-problem">
+                <span>Problem on the table</span>
+                <textarea
+                  value={board.problem}
+                  onChange={(event) =>
+                    setBoard((current) => ({
+                      ...current,
+                      problem: event.target.value,
+                    }))
+                  }
+                  placeholder="What are we trying to solve?"
+                  rows={3}
+                  disabled={!activeSession}
+                />
+              </label>
+              <div className="board-grid">
+                {BOARD_SECTIONS.map((section) => (
+                  <label
+                    className={`board-note ${section.key}`}
+                    key={section.key}
+                  >
+                    <span>{section.label}</span>
+                    <textarea
+                      value={board[section.key].join("\n")}
+                      onChange={(event) =>
+                        setBoard((current) => ({
+                          ...current,
+                          [section.key]: splitLines(event.target.value),
+                        }))
+                      }
+                      placeholder="One item per line"
+                      rows={4}
+                      disabled={!activeSession}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="board-footer">
+              <span title={dataPath}>
+                {dataPath
+                  ? "Saved to local files"
+                  : "Local data path unavailable"}
+              </span>
+              <button
+                className="button board-save"
+                type="button"
+                onClick={() => void saveBoard()}
+                disabled={!activeSession || savingBoard}
+              >
+                {savingBoard ? "Saving…" : "Save board"}
+              </button>
+            </div>
+          </section>
+        </section>
+        <aside
+          className="meeting-rail"
+          aria-label="Meeting participants and speaker view"
+        >
+          <div className="rail-heading">
+            <h2>Speaker view</h2>
+            <span>{advisors.length + 1} participants</span>
+          </div>
+          <section
+            className={`speaker-view ${speakerId ? "is-speaking" : ""}`}
+            aria-label="Active speaker"
+          >
+            <span className="speaker-status">
+              {sending
+                ? "Thinking"
+                : speakerId
+                  ? "Speaking"
+                  : activeContribution
+                    ? "Presenting"
+                    : "Ready"}
+            </span>
+            <div
+              className="speaker-portrait"
+              style={
+                {
+                  "--advisor-color": featuredAdvisor?.color ?? "#6c8dff",
+                } as React.CSSProperties
+              }
+            >
+              {featuredAdvisor ? (
+                <AdvisorPortrait advisor={featuredAdvisor} />
+              ) : (
+                <span className="facilitator-avatar">
                   <SparkIcon />
                 </span>
-              </div>
-              <span className="table-leg left" />
-              <span className="table-leg right" />
+              )}
             </div>
+            <div className="speaker-name">
+              <strong>
+                {activeContribution && !contributionAdvisor
+                  ? "Council facilitator"
+                  : (contributionAdvisor?.name ??
+                    selectedAdvisor?.name ??
+                    "Council facilitator")}
+              </strong>
+              <span>AI participant</span>
+            </div>
+          </section>
+          {activeContribution && (
+            <div className="speaker-caption" role="status">
+              <strong>
+                {contributionAdvisor?.name ?? "Council facilitator"}
+              </strong>
+              <p>{activeContribution.text}</p>
+            </div>
+          )}
+          <div className="participant-heading">
+            <span>Participants</span>
+            <small>Select someone to invite</small>
+          </div>
+          <div
+            className="advisor-ring"
+            role="group"
+            aria-label="Council advisors"
+          >
+            {advisors.map((advisor) => {
+              const selected = advisor.id === selectedAdvisorId;
+              const presenting = advisor.id === contributionAdvisor?.id;
+              const speaking = advisor.id === speakerId;
+              return (
+                <button
+                  key={advisor.id}
+                  type="button"
+                  className={`advisor-seat ${selected ? "selected" : ""} ${presenting ? "presenting" : ""} ${speaking ? "speaking" : ""}`}
+                  style={
+                    {
+                      "--advisor-color": advisor.color,
+                    } as React.CSSProperties
+                  }
+                  onClick={() => selectAdvisor(advisor)}
+                  aria-pressed={selected}
+                  aria-label={`${selected ? "Stop addressing" : "Address"} ${advisor.name}, ${advisor.role}`}
+                >
+                  <AdvisorPortrait advisor={advisor} />
+                  <span className="advisor-copy">
+                    <strong>{advisor.name}</strong>
+                    <small>{advisor.role}</small>
+                  </span>
+                  <span className="advisor-state">
+                    {speaking
+                      ? "Speaking"
+                      : presenting
+                        ? "Presenting"
+                        : selected
+                          ? "Selected"
+                          : "Invite"}
+                  </span>
+                </button>
+              );
+            })}
+            {!advisors.length && (
+              <p className="empty-advisors">
+                Advisor configuration could not be loaded.
+              </p>
+            )}
           </div>
 
           <div className="addressing-line" aria-live="polite">
@@ -1118,314 +1196,258 @@ export default function Home() {
             )}
           </div>
 
-          <form className="composer" onSubmit={askCouncil}>
-            <div className="model-control-row">
-              <label className="model-control" htmlFor="council-model">
-                <span>Council model</span>
-                <select
-                  id="council-model"
-                  value={modelId}
-                  disabled={!models.some((item) => item.configured)}
-                  onChange={(event) => {
-                    stopPlayback();
-                    setModelId(event.target.value);
-                    try {
-                      window.localStorage.setItem(
-                        MODEL_SELECTION_KEY,
-                        event.target.value,
-                      );
-                    } catch {
-                      // A blocked storage setting must not prevent selecting a model.
-                    }
-                  }}
-                  aria-describedby="model-selection-note"
-                >
-                  {!models.length && (
-                    <option value="">No models available</option>
-                  )}
-                  {models.map((item) => (
-                    <option
-                      key={item.id}
-                      value={item.id}
-                      disabled={!item.configured}
-                    >
-                      {item.provider === "openai" ? "OpenAI" : "Anthropic"} ·{" "}
-                      {item.name}
-                      {!item.configured ? " · key required" : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <small id="model-selection-note">
-                Choose the model for your next council turn.
-              </small>
-            </div>
-            <label htmlFor="council-message" className="sr-only">
-              Message the council
-            </label>
-            <textarea
-              id="council-message"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder={
-                activeSession
-                  ? "Bring a decision, problem, or half-formed idea to the table…"
-                  : "Create a session to begin…"
-              }
-              rows={3}
-              disabled={!activeSession}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  event.currentTarget.form?.requestSubmit();
-                }
-              }}
-            />
-            <div className="composer-actions">
-              <div className="voice-tools">
-                <button
-                  className={`icon-button ${listening ? "live" : ""}`}
-                  type="button"
-                  onClick={toggleListening}
-                  disabled={!recognitionSupported || !activeSession}
-                  aria-pressed={listening}
-                  title={
-                    recognitionSupported
-                      ? "Dictate with your browser. Speech may be processed by your browser vendor."
-                      : "Voice input is not supported in this browser."
-                  }
-                >
-                  <MicIcon /> <span>{listening ? "Listening…" : "Speak"}</span>
-                </button>
-                <label className="voice-mode-control">
-                  <span>Voice</span>
-                  <select
-                    value={voiceMode}
-                    onChange={(event) => {
-                      stopPlayback();
-                      setVoiceRuntimeError("");
-                      setVoiceMode(event.target.value as VoiceMode);
-                    }}
-                    aria-label="Reply voice service"
+          <details className="meeting-chat">
+            <summary>
+              Conversation <span>{activeSession?.messages.length ?? 0}</span>
+            </summary>
+            <section className="transcript-card">
+              <div className="card-header transcript-header">
+                <div>
+                  <span className="eyebrow">Meeting notes</span>
+                  <h2>Conversation</h2>
+                </div>
+                {(lastTurn?.modelId || modelId || model) && (
+                  <span
+                    className="model-chip"
+                    title={lastTurn?.modelId || modelId || model}
                   >
-                    <option value="elevenlabs">ElevenLabs · v4 Turbo</option>
-                    <option value="browser">Browser fallback</option>
-                  </select>
-                </label>
-                <label
-                  className={`voice-toggle ${voiceMode === "browser" && !synthesisSupported ? "unavailable" : ""}`}
-                  title={
-                    voiceMode === "elevenlabs"
-                      ? "High-quality ElevenLabs v4 Turbo audio. Replies remain silent when ElevenLabs is unavailable."
-                      : synthesisSupported
-                        ? "Fallback uses installed browser voices."
-                        : "Browser voice fallback is not supported here."
-                  }
-                >
-                  <input
-                    type="checkbox"
-                    checked={readAloud}
-                    disabled={voiceMode === "browser" && !synthesisSupported}
-                    onChange={(event) => {
-                      stopPlayback();
-                      setReadAloud(event.target.checked);
-                    }}
-                  />
-                  <span className="toggle-track">
-                    <span />
+                    {lastTurn?.modelId || modelId || model}
                   </span>
-                  Read replies aloud
-                </label>
-                {replayContributions.length > 0 && (
-                  <button
-                    className="playback-replay"
-                    type="button"
-                    onClick={() => presentContributions(replayContributions)}
-                    disabled={sending}
-                    title="Replay the latest persisted council contributions"
-                  >
-                    <span aria-hidden="true">↻</span> Replay last turn
-                  </button>
-                )}
-                {(playbackActive || sending) && (
-                  <button
-                    className="playback-stop"
-                    type="button"
-                    onClick={stopPlayback}
-                  >
-                    <span aria-hidden="true" />{" "}
-                    {sending ? "Stop response" : "Stop"}
-                  </button>
                 )}
               </div>
-              <button
-                className="button primary"
-                type="submit"
-                disabled={
-                  !draft.trim() ||
-                  !activeSession ||
-                  sending ||
-                  !selectedModel?.configured
-                }
+              <div
+                className="transcript"
+                role="log"
+                aria-live="polite"
+                aria-relevant="additions text"
               >
-                <SparkIcon /> {sending ? "Convening…" : "Ask the council"}
-              </button>
-            </div>
-          </form>
-        </section>
-
-        <aside className="side-panel">
-          <section className="whiteboard-card">
-            <div className="card-header">
-              <div>
-                <span className="eyebrow">Shared memory</span>
-                <h2>Whiteboard</h2>
-              </div>
-              <div className="save-state" aria-live="polite">
-                {boardNotice}
-              </div>
-            </div>
-            <div className="board-scroll">
-              <label className="board-problem">
-                <span>Problem on the table</span>
-                <textarea
-                  value={board.problem}
-                  onChange={(event) =>
-                    setBoard((current) => ({
-                      ...current,
-                      problem: event.target.value,
-                    }))
-                  }
-                  placeholder="What are we trying to solve?"
-                  rows={3}
-                  disabled={!activeSession}
-                />
-              </label>
-              <div className="board-grid">
-                {BOARD_SECTIONS.map((section) => (
-                  <label
-                    className={`board-note ${section.key}`}
-                    key={section.key}
-                  >
-                    <span>{section.label}</span>
-                    <textarea
-                      value={board[section.key].join("\n")}
-                      onChange={(event) =>
-                        setBoard((current) => ({
-                          ...current,
-                          [section.key]: splitLines(event.target.value),
-                        }))
+                {!activeSession?.messages.length && (
+                  <div className="empty-transcript">
+                    <span>
+                      <SparkIcon />
+                    </span>
+                    <strong>The table is open.</strong>
+                    <p>
+                      Share what is on your mind. The facilitator will bring in
+                      useful viewpoints and capture what matters.
+                    </p>
+                  </div>
+                )}
+                {activeSession?.messages.map((message) => {
+                  const advisor = messageAdvisor(message, advisors);
+                  const isUser = message.speaker.toLowerCase() === "user";
+                  return (
+                    <article
+                      className={`message ${isUser ? "user-message" : "advisor-message"} ${activeContribution?.id === message.id ? "active-message" : ""}`}
+                      key={message.id}
+                      aria-current={
+                        activeContribution?.id === message.id
+                          ? "true"
+                          : undefined
                       }
-                      placeholder="One item per line"
-                      rows={4}
-                      disabled={!activeSession}
-                    />
-                  </label>
-                ))}
+                    >
+                      <div className="message-meta">
+                        <span
+                          className="message-avatar"
+                          style={
+                            {
+                              "--advisor-color": advisor?.color ?? "#d4ff63",
+                            } as React.CSSProperties
+                          }
+                        >
+                          {isUser ? "YOU" : (advisor?.initials ?? "AI")}
+                        </span>
+                        <strong>
+                          {isUser
+                            ? "You"
+                            : (advisor?.name ?? "Council facilitator")}
+                        </strong>
+                        <time dateTime={message.createdAt}>
+                          {formatTime(message.createdAt)}
+                        </time>
+                      </div>
+                      <p>{message.text}</p>
+                    </article>
+                  );
+                })}
+                {sending && (
+                  <div className="thinking-message" role="status">
+                    <span />
+                    <span />
+                    <span />
+                    <p>
+                      {selectedAdvisorId
+                        ? "An advisor is considering your question"
+                        : "The facilitator is choosing the right voices"}
+                    </p>
+                  </div>
+                )}
+                <div ref={transcriptEndRef} />
               </div>
-            </div>
-            <div className="board-footer">
-              <span title={dataPath}>
-                {dataPath
-                  ? "Saved to local files"
-                  : "Local data path unavailable"}
-              </span>
-              <button
-                className="button board-save"
-                type="button"
-                onClick={() => void saveBoard()}
-                disabled={!activeSession || savingBoard}
-              >
-                {savingBoard ? "Saving…" : "Save board"}
-              </button>
-            </div>
-          </section>
-
-          <section className="transcript-card">
-            <div className="card-header transcript-header">
-              <div>
-                <span className="eyebrow">Meeting notes</span>
-                <h2>Conversation</h2>
-              </div>
-              {(lastTurn?.modelId || modelId || model) && (
-                <span
-                  className="model-chip"
-                  title={lastTurn?.modelId || modelId || model}
-                >
-                  {lastTurn?.modelId || modelId || model}
-                </span>
-              )}
-            </div>
-            <div
-              className="transcript"
-              role="log"
-              aria-live="polite"
-              aria-relevant="additions text"
-            >
-              {!activeSession?.messages.length && (
-                <div className="empty-transcript">
-                  <span>
-                    <SparkIcon />
-                  </span>
-                  <strong>The table is open.</strong>
-                  <p>
-                    Share what is on your mind. The facilitator will bring in
-                    useful viewpoints and capture what matters.
-                  </p>
-                </div>
-              )}
-              {activeSession?.messages.map((message) => {
-                const advisor = messageAdvisor(message, advisors);
-                const isUser = message.speaker.toLowerCase() === "user";
-                return (
-                  <article
-                    className={`message ${isUser ? "user-message" : "advisor-message"} ${activeContribution?.id === message.id ? "active-message" : ""}`}
-                    key={message.id}
-                    aria-current={
-                      activeContribution?.id === message.id ? "true" : undefined
-                    }
-                  >
-                    <div className="message-meta">
-                      <span
-                        className="message-avatar"
-                        style={
-                          {
-                            "--advisor-color": advisor?.color ?? "#d4ff63",
-                          } as React.CSSProperties
-                        }
-                      >
-                        {isUser ? "YOU" : (advisor?.initials ?? "AI")}
-                      </span>
-                      <strong>
-                        {isUser
-                          ? "You"
-                          : (advisor?.name ?? "Council facilitator")}
-                      </strong>
-                      <time dateTime={message.createdAt}>
-                        {formatTime(message.createdAt)}
-                      </time>
-                    </div>
-                    <p>{message.text}</p>
-                  </article>
-                );
-              })}
-              {sending && (
-                <div className="thinking-message" role="status">
-                  <span />
-                  <span />
-                  <span />
-                  <p>
-                    {selectedAdvisorId
-                      ? "An advisor is considering your question"
-                      : "The facilitator is choosing the right voices"}
-                  </p>
-                </div>
-              )}
-              <div ref={transcriptEndRef} />
-            </div>
-          </section>
+            </section>
+          </details>
         </aside>
       </div>
+      <div className="meeting-dock">
+        <form className="composer" onSubmit={askCouncil}>
+          <div className="model-control-row">
+            <label className="model-control" htmlFor="council-model">
+              <span>Council model</span>
+              <select
+                id="council-model"
+                value={modelId}
+                disabled={!models.some((item) => item.configured)}
+                onChange={(event) => {
+                  stopPlayback();
+                  setModelId(event.target.value);
+                  try {
+                    window.localStorage.setItem(
+                      MODEL_SELECTION_KEY,
+                      event.target.value,
+                    );
+                  } catch {
+                    // A blocked storage setting must not prevent selecting a model.
+                  }
+                }}
+                aria-describedby="model-selection-note"
+              >
+                {!models.length && (
+                  <option value="">No models available</option>
+                )}
+                {models.map((item) => (
+                  <option
+                    key={item.id}
+                    value={item.id}
+                    disabled={!item.configured}
+                  >
+                    {item.provider === "openai" ? "OpenAI" : "Anthropic"} ·{" "}
+                    {item.name}
+                    {!item.configured ? " · key required" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <small id="model-selection-note">
+              Choose the model for your next council turn.
+            </small>
+          </div>
+          <label htmlFor="council-message" className="sr-only">
+            Message the council
+          </label>
+          <textarea
+            id="council-message"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder={
+              activeSession
+                ? "Bring a decision, problem, or half-formed idea to the table…"
+                : "Create a session to begin…"
+            }
+            rows={2}
+            disabled={!activeSession}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
+          />
+          <div className="composer-actions">
+            <div className="voice-tools">
+              <button
+                className={`icon-button ${listening ? "live" : ""}`}
+                type="button"
+                onClick={toggleListening}
+                disabled={!recognitionSupported || !activeSession}
+                aria-pressed={listening}
+                title={
+                  recognitionSupported
+                    ? "Dictate with your browser. Speech may be processed by your browser vendor."
+                    : "Voice input is not supported in this browser."
+                }
+              >
+                <MicIcon /> <span>{listening ? "Listening…" : "Speak"}</span>
+              </button>
+              <label className="voice-mode-control">
+                <span>Voice</span>
+                <select
+                  value={voiceMode}
+                  onChange={(event) => {
+                    stopPlayback();
+                    setVoiceRuntimeError("");
+                    setVoiceMode(event.target.value as VoiceMode);
+                  }}
+                  aria-label="Reply voice service"
+                >
+                  <option value="elevenlabs">ElevenLabs · v4 Turbo</option>
+                  <option value="browser">Browser fallback</option>
+                </select>
+              </label>
+              <label
+                className={`voice-toggle ${voiceMode === "browser" && !synthesisSupported ? "unavailable" : ""}`}
+                title={
+                  voiceMode === "elevenlabs"
+                    ? "High-quality ElevenLabs v4 Turbo audio. Replies remain silent when ElevenLabs is unavailable."
+                    : synthesisSupported
+                      ? "Fallback uses installed browser voices."
+                      : "Browser voice fallback is not supported here."
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={readAloud}
+                  disabled={voiceMode === "browser" && !synthesisSupported}
+                  onChange={(event) => {
+                    stopPlayback();
+                    setReadAloud(event.target.checked);
+                  }}
+                />
+                <span className="toggle-track">
+                  <span />
+                </span>
+                Read replies aloud
+              </label>
+              {replayContributions.length > 0 && (
+                <button
+                  className="playback-replay"
+                  type="button"
+                  onClick={() => presentContributions(replayContributions)}
+                  disabled={sending}
+                  title="Replay the latest persisted council contributions"
+                >
+                  <span aria-hidden="true">↻</span> Replay last turn
+                </button>
+              )}
+              {(playbackActive || sending) && (
+                <button
+                  className="playback-stop"
+                  type="button"
+                  onClick={stopPlayback}
+                >
+                  <span aria-hidden="true" />{" "}
+                  {sending ? "Stop response" : "Stop"}
+                </button>
+              )}
+            </div>
+            <button
+              className="button primary"
+              type="submit"
+              disabled={
+                !draft.trim() ||
+                !activeSession ||
+                sending ||
+                !selectedModel?.configured
+              }
+            >
+              <SparkIcon /> {sending ? "Convening…" : "Ask the council"}
+            </button>
+          </div>
+        </form>{" "}
+      </div>
+      <p className="council-disclosure">
+        AI interpretations inspired by these figures, not the real people.
+        Generated perspectives; source research pending.
+      </p>
     </main>
   );
 }
