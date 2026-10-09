@@ -780,6 +780,40 @@ input:focus-visible {
 .composer textarea::placeholder {
   color: #75767d;
 }
+.model-control-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 12px 16px 0;
+}
+.model-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  color: #b0b1b9;
+  font-size: 11px;
+}
+.model-control select {
+  max-width: 100%;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #27272f;
+  color: #e5e5eb;
+  font: inherit;
+  font-size: 12px;
+}
+.model-control select:disabled {
+  opacity: 0.55;
+}
+.model-control-row small {
+  color: #84858e;
+  font-size: 10px;
+}
 .composer-actions {
   display: flex;
   align-items: center;

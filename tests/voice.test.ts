@@ -195,6 +195,55 @@ test("stock discovery paginates, excludes clones, and persists only eligible adv
   assert.equal(voiceAssignments(await advisors(), voices).alex, "C");
 });
 
+test("stock defaults stay distinct around saved choices and insufficient inventory is explicit", async (t) => {
+  await isolated(t);
+  const members = await advisors();
+  const voices = ["A", "B", "C", "D", "E"].map((id) => ({ id, name: id }));
+  const chosen = members.map((member) =>
+    member.id === "alex" ? { ...member, elevenVoiceId: "A" } : member,
+  );
+  const assignments = voiceAssignments(chosen, voices);
+  assert.equal(assignments.alex, "A", "saved explicit choice is preserved");
+  assert.equal(new Set(Object.values(assignments)).size, 5);
+  assert.deepEqual(assignments, {
+    elon: "B",
+    jeff: "C",
+    alex: "A",
+    albert: "D",
+    facilitator: "E",
+  });
+  const four = voiceAssignments(chosen, voices.slice(0, 4));
+  assert.equal(new Set(members.map((member) => four[member.id])).size, 4);
+  assert.equal(four.facilitator, "A");
+  const duplicateChoices = chosen.map((member) =>
+    member.id === "jeff" ? { ...member, elevenVoiceId: "A" } : member,
+  );
+  const explicit = voiceAssignments(duplicateChoices, voices);
+  assert.equal(explicit.jeff, "A");
+  assert.equal(explicit.alex, "A");
+  assert.notEqual(explicit.elon, "A");
+  assert.notEqual(explicit.albert, "A");
+  assert.notEqual(explicit.elon, explicit.albert);
+  const staleChoice = members.map((member) => ({
+    ...member,
+    elevenVoiceId: "gone",
+  }));
+  assert.deepEqual(voiceAssignments(staleChoice, voices), {
+    elon: "A",
+    jeff: "B",
+    alex: "C",
+    albert: "D",
+    facilitator: "E",
+  });
+  assert.throws(
+    () => voiceAssignments(members, voices.slice(0, 3)),
+    (error: unknown) =>
+      error instanceof VoiceError &&
+      error.status === 503 &&
+      /4 distinct/.test(error.message),
+  );
+});
+
 test("dialogue socket follows verified one-voice frames and joins audio until is_final", async (t) => {
   await isolated(t, true);
   const { server, openSocket } = await socketServer(t);

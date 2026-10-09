@@ -8,6 +8,7 @@ import {
 } from "@/lib/storage";
 import { failure, localRequest } from "@/lib/http";
 import { configuredModel, configurationError } from "@/lib/council";
+import { modelChoices } from "@/lib/models";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
@@ -23,6 +24,8 @@ export async function GET(request: Request) {
           configured: !configurationError(),
           configurationError: configurationError(),
           model: configuredModel(),
+          defaultModel: configuredModel(),
+          models: modelChoices(),
           dataPath: dataDirectory(),
         },
         { headers: { "Cache-Control": "no-store" } },

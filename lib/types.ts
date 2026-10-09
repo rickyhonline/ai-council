@@ -1,3 +1,4 @@
+import type { ModelId } from "./models";
 export type Advisor = {
   id: string;
   name: string;
@@ -28,9 +29,16 @@ export type Session = {
   messages: Message[];
   board: Board;
   updatedAt: string;
+  modelId?: ModelId;
+  memory?: {
+    summary: string;
+    throughMessageId: string;
+    updatedAt: string;
+  };
   lastTurn?: {
     invited: string[];
     reason: string;
     participation: Record<string, number>;
+    modelId?: ModelId;
   };
 };

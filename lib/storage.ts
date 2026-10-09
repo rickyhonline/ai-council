@@ -12,6 +12,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { starterAdvisors } from "./advisors";
 import type { Board, Session } from "./types";
+import { modelIdSchema } from "./models";
 
 export const boardSchema = z.object({
   problem: z.string().max(8000),
@@ -44,11 +45,20 @@ const sessionSchema = z.object({
   ),
   board: boardSchema,
   updatedAt: z.iso.datetime(),
+  modelId: modelIdSchema.optional(),
+  memory: z
+    .object({
+      summary: z.string().trim().min(1).max(10000),
+      throughMessageId: z.uuid(),
+      updatedAt: z.iso.datetime(),
+    })
+    .optional(),
   lastTurn: z
     .object({
       invited: z.array(z.string()).max(2),
       reason: z.string().max(1000),
       participation: z.record(z.string(), z.number().int().nonnegative()),
+      modelId: modelIdSchema.optional(),
     })
     .optional(),
 });

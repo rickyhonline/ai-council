@@ -2,13 +2,9 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import { advisors, knowledgeFor } from "./storage";
 import type { Board, Session } from "./types";
-
-export const configuredModel = () =>
-  process.env.AI_GATEWAY_MODEL || "openai/gpt-5.4-mini";
-export const configurationError = () =>
-  process.env.AI_GATEWAY_API_KEY
-    ? undefined
-    : "Set AI_GATEWAY_API_KEY in .env.local and restart the app. No model credential was found in this app’s authorized local configuration.";
+import { councilModel, councilProviderOptions } from "./models";
+import { prepareContext } from "./context";
+export { configuredModel, configurationError } from "./models";
 const advisorId = z.enum(["elon", "jeff", "alex", "albert"]);
 const shortList = z.array(z.string().max(1000)).max(8);
 const synthesisSchema = z.object({
@@ -26,24 +22,28 @@ export async function discuss(
   session: Session,
   text: string,
   selected?: string,
-  model: Parameters<typeof generateText>[0]["model"] = configuredModel(),
+  model: Parameters<typeof generateText>[0]["model"] = councilModel(),
+  options: {
+    abortSignal?: AbortSignal;
+    checkpoint?: (memory: NonNullable<Session["memory"]>) => Promise<void>;
+  } = {},
 ) {
+  options.abortSignal?.throwIfAborted();
   const members = await advisors();
-  const boardContext = Object.fromEntries(
-    Object.entries(session.board).map(([key, value]) => [
-      key,
-      typeof value === "string"
-        ? value.slice(0, 8000)
-        : value.slice(-12).map((item) => item.slice(0, 1000)),
-    ]),
+  const { context, memory } = await prepareContext(
+    session,
+    text,
+    model,
+    options.abortSignal,
+    options.checkpoint,
   );
-  const context = JSON.stringify({
-    board: boardContext,
-    conversation: session.messages
-      .slice(-30)
-      .map((m) => ({ speaker: m.speaker, text: m.text.slice(0, 1300) })),
-  });
-  const common = { model, timeout: 45000, maxRetries: 0 };
+  const common = {
+    model,
+    timeout: 45000,
+    maxRetries: 0,
+    abortSignal: options.abortSignal,
+    providerOptions: councilProviderOptions,
+  };
   const participation = Object.fromEntries(
     members.map((member) => [
       member.id,
@@ -76,6 +76,7 @@ export async function discuss(
         })
       ).output;
   const invited = [...new Set(selection.invite)];
+  options.abortSignal?.throwIfAborted();
   if (!invited.length) {
     if (!selection.reply.trim())
       throw new Error("The facilitator returned no useful reply.");
@@ -83,12 +84,14 @@ export async function discuss(
       contributions: [{ speaker: "facilitator", text: selection.reply }],
       additions: { ideas: [], questions: [], options: [], tradeoffs: [] },
       selection: { invited, reason: selection.reason, participation },
+      memory,
     };
   }
   const contributions = await Promise.all(
     [...new Set(invited)].map(async (id) => {
       const advisor = members.find((m) => m.id === id)!;
       const knowledge = await knowledgeFor(id, text);
+      options.abortSignal?.throwIfAborted();
       const { text: response } = await generateText({
         ...common,
         maxOutputTokens: 1000,
@@ -100,6 +103,7 @@ export async function discuss(
       return { speaker: id, text: response.trim().slice(0, 16000) };
     }),
   );
+  options.abortSignal?.throwIfAborted();
   const { output } = await generateText({
     ...common,
     maxOutputTokens: 2200,
@@ -108,6 +112,7 @@ export async function discuss(
     output: Output.object({ schema: synthesisSchema }),
   });
   return {
+    memory,
     contributions: [
       ...contributions,
       { speaker: "facilitator", text: output.text },

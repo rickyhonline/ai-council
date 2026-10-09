@@ -17,15 +17,26 @@ import { localBody } from "../lib/http";
 
 async function isolatedStore(t: TestContext) {
   const previousDirectory = process.env.COUNCIL_DATA_DIR;
-  const previousKey = process.env.AI_GATEWAY_API_KEY;
+  const keyNames = [
+    "AI_GATEWAY_API_KEY",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+  ];
+  const previousKeys = Object.fromEntries(
+    keyNames.map((name) => [name, process.env[name]]),
+  );
   const directory = await mkdtemp(path.join(tmpdir(), "council-routes-"));
   process.env.COUNCIL_DATA_DIR = directory;
-  delete process.env.AI_GATEWAY_API_KEY;
+  keyNames.forEach((name) => {
+    delete process.env[name];
+  });
   t.after(async () => {
     if (previousDirectory === undefined) delete process.env.COUNCIL_DATA_DIR;
     else process.env.COUNCIL_DATA_DIR = previousDirectory;
-    if (previousKey === undefined) delete process.env.AI_GATEWAY_API_KEY;
-    else process.env.AI_GATEWAY_API_KEY = previousKey;
+    keyNames.forEach((name) => {
+      if (previousKeys[name] === undefined) delete process.env[name];
+      else process.env[name] = previousKeys[name];
+    });
     await rm(directory, { recursive: true, force: true });
   });
   return directory;

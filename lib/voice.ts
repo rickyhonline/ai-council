@@ -110,18 +110,44 @@ export function voiceAssignments(
   members: Advisor[],
   voices: StockVoice[],
 ): Record<string, string> {
-  if (!voices.length) return {};
   const ids = new Set(voices.map((v) => v.id));
+  if (ids.size < members.length)
+    throw new VoiceError(
+      `The council needs ${members.length} distinct stock ElevenLabs voices. This key currently exposes ${ids.size}. Check its Voices permission.`,
+      503,
+    );
   const order = ["elon", "jeff", "alex", "albert"];
-  return Object.fromEntries([
-    ...members.map((member) => [
-      member.id,
+  const assignments: Record<string, string> = {};
+  // Reserve every explicit choice before filling defaults. Explicit user choices
+  // may match, but a default must never steal another member's chosen voice.
+  const used = new Set(
+    members.flatMap((member) =>
       member.elevenVoiceId && ids.has(member.elevenVoiceId)
-        ? member.elevenVoiceId
-        : voices[Math.max(0, order.indexOf(member.id)) % voices.length].id,
-    ]),
-    ["facilitator", voices[4 % voices.length].id],
-  ]);
+        ? [member.elevenVoiceId]
+        : [],
+    ),
+  );
+  for (const member of members) {
+    if (member.elevenVoiceId && ids.has(member.elevenVoiceId)) {
+      assignments[member.id] = member.elevenVoiceId;
+      continue;
+    }
+    const preferred = voices[Math.max(0, order.indexOf(member.id))];
+    const voice =
+      preferred && !used.has(preferred.id)
+        ? preferred
+        : voices.find((voice) => !used.has(voice.id))!;
+    assignments[member.id] = voice.id;
+    used.add(voice.id);
+  }
+  // A fifth stock voice gives the facilitator its own voice. With only four,
+  // prioritize distinct advisors and reuse a stock voice for the facilitator.
+  const preferred = voices[4];
+  assignments.facilitator =
+    (preferred && !used.has(preferred.id) ? preferred : undefined)?.id ??
+    voices.find((voice) => !used.has(voice.id))?.id ??
+    voices[0].id;
+  return assignments;
 }
 
 // The documented Text-to-Dialogue protocol supports one registered voice per v4 Turbo socket.

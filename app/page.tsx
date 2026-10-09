@@ -16,8 +16,19 @@ type StatePayload = {
   configured: boolean;
   configurationError?: string;
   model: string;
+  models: CouncilModel[];
+  defaultModel: string;
   dataPath: string;
 };
+
+type CouncilModel = {
+  id: string;
+  provider: "openai" | "anthropic";
+  name: string;
+  configured: boolean;
+};
+
+const MODEL_SELECTION_KEY = "ai-council:model";
 
 type VoiceAdvisor = Advisor & { voiceURI?: string; elevenVoiceId?: string };
 type VoiceMode = "elevenlabs" | "browser";
@@ -33,6 +44,7 @@ type CouncilTurn = {
   invited: string[];
   reason: string;
   participation: Record<string, number>;
+  modelId?: string;
 };
 
 type RecognitionResultEvent = {
@@ -166,6 +178,8 @@ export default function Home() {
   const [selectedAdvisorId, setSelectedAdvisorId] = useState("");
   const [configured, setConfigured] = useState(true);
   const [model, setModel] = useState("");
+  const [models, setModels] = useState<CouncilModel[]>([]);
+  const [modelId, setModelId] = useState("");
   const [dataPath, setDataPath] = useState("");
   const [board, setBoard] = useState<Board>(EMPTY_BOARD);
   const [draft, setDraft] = useState("");
@@ -183,7 +197,9 @@ export default function Home() {
   const [elevenConfigured, setElevenConfigured] = useState(false);
   const [elevenConfigurationError, setElevenConfigurationError] = useState("");
   const [elevenVoices, setElevenVoices] = useState<ElevenVoice[]>([]);
-  const [elevenAssignments, setElevenAssignments] = useState<Record<string, string>>({});
+  const [elevenAssignments, setElevenAssignments] = useState<
+    Record<string, string>
+  >({});
   const [voiceRuntimeError, setVoiceRuntimeError] = useState("");
   const [listening, setListening] = useState(false);
   const [readAloud, setReadAloud] = useState(false);
@@ -197,6 +213,7 @@ export default function Home() {
   const playbackTimerRef = useRef<number | null>(null);
   const playbackTokenRef = useRef(0);
   const voiceAbortRef = useRef<AbortController | null>(null);
+  const councilAbortRef = useRef<AbortController | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
@@ -224,7 +241,7 @@ export default function Home() {
   const selectedElevenVoiceAvailable =
     !selectedElevenVoiceId ||
     elevenVoices.some((voice) => voice.id === selectedElevenVoiceId);
-  const councilRuntimeDecisionPending = /gateway/i.test(configurationError);
+  const selectedModel = models.find((item) => item.id === modelId);
   const lastTurn = (
     activeSession as (Session & { lastTurn?: CouncilTurn }) | undefined
   )?.lastTurn;
@@ -256,6 +273,9 @@ export default function Home() {
   }, []);
 
   const stopPlayback = useCallback(() => {
+    councilAbortRef.current?.abort();
+    councilAbortRef.current = null;
+    setSending(false);
     playbackTokenRef.current += 1;
     playbackQueueRef.current = [];
     if (playbackTimerRef.current !== null) {
@@ -282,6 +302,25 @@ export default function Home() {
       setConfigured(payload.configured);
       setConfigurationError(payload.configurationError ?? "");
       setModel(payload.model);
+      const availableModels = payload.models ?? [];
+      setModels(availableModels);
+      let savedModelId: string | null = null;
+      try {
+        savedModelId = window.localStorage.getItem(MODEL_SELECTION_KEY);
+      } catch {
+        // Model selection still works when browser storage is unavailable.
+      }
+      setModelId(
+        availableModels.find(
+          (item) => item.id === savedModelId && item.configured,
+        )?.id ??
+          availableModels.find(
+            (item) => item.id === payload.defaultModel && item.configured,
+          )?.id ??
+          availableModels.find((item) => item.configured)?.id ??
+          payload.defaultModel ??
+          "",
+      );
       setDataPath(payload.dataPath);
       setActiveSessionId((current) =>
         keepSession &&
@@ -306,7 +345,9 @@ export default function Home() {
         error?: string;
       };
       if (!response.ok) {
-        throw new Error(payload.error || "Could not load ElevenLabs voice configuration.");
+        throw new Error(
+          payload.error || "Could not load ElevenLabs voice configuration.",
+        );
       }
       setElevenConfigured(Boolean(payload.configured));
       setElevenConfigurationError(payload.error ?? "");
@@ -444,7 +485,8 @@ export default function Home() {
             });
             if (token !== playbackTokenRef.current) return;
             if (!response.ok) {
-              let message = "ElevenLabs could not generate this voice response.";
+              let message =
+                "ElevenLabs could not generate this voice response.";
               try {
                 const payload = (await response.json()) as { error?: string };
                 message = payload.error || message;
@@ -701,13 +743,16 @@ export default function Home() {
   async function askCouncil(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
-    if (!text || !activeSession || sending) return;
+    if (!text || !activeSession || sending || !selectedModel?.configured)
+      return;
     const submittedDraft = draft;
     const previousMessageIds = new Set(
       activeSession.messages.map((message) => message.id),
     );
     stopPlayback();
     const requestPlaybackToken = playbackTokenRef.current;
+    const controller = new AbortController();
+    councilAbortRef.current = controller;
     setSending(true);
     setError("");
     try {
@@ -717,10 +762,13 @@ export default function Home() {
         body: JSON.stringify({
           sessionId: activeSession.id,
           text,
+          modelId,
           ...(selectedAdvisorId ? { advisorId: selectedAdvisorId } : {}),
         }),
+        signal: controller.signal,
       });
       const payload = (await response.json()) as Session & { error?: string };
+      if (controller.signal.aborted) return;
       if (!response.ok)
         throw new Error(payload.error || "The council could not respond.");
       setSessions((current) =>
@@ -729,6 +777,8 @@ export default function Home() {
         ),
       );
       if (playbackTokenRef.current === requestPlaybackToken) {
+        councilAbortRef.current = null;
+        setSending(false);
         setDraft((current) => (current === submittedDraft ? "" : current));
         presentContributions(
           payload.messages.filter(
@@ -739,14 +789,18 @@ export default function Home() {
         );
       }
     } catch (cause) {
+      if (controller.signal.aborted) return;
       const message =
         cause instanceof Error
           ? cause.message
           : "The council could not respond.";
       await loadState(true);
-      setError(message);
+      if (!controller.signal.aborted) setError(message);
     } finally {
-      setSending(false);
+      if (councilAbortRef.current === controller) {
+        councilAbortRef.current = null;
+        setSending(false);
+      }
     }
   }
 
@@ -852,16 +906,12 @@ export default function Home() {
           <span className="config-dot" />
           <div>
             <strong>
-              {councilRuntimeDecisionPending
-                ? "Council runtime decision pending."
-                : `Model: ${configurationError || "model access is not configured."}`}
+              {configurationError || "Council model access is not configured."}
             </strong>
             <span>
-              {councilRuntimeDecisionPending ? (
-                <>Council responses are paused while the runtime choice is finalized. Your local sessions and whiteboard remain available.</>
-              ) : (
-                <>Add the provider key described in <code>.env.example</code>. Your whiteboard and sessions still save to local files.</>
-              )}
+              Add an OpenAI or Anthropic key as described in{" "}
+              <code>.env.example</code>. Your whiteboard and sessions still save
+              to local files.
             </span>
           </div>
         </section>
@@ -872,10 +922,12 @@ export default function Home() {
           <span className="config-dot" />
           <div>
             <strong>
-              ElevenLabs voice: {elevenConfigurationError || "voice access is not configured."}
+              ElevenLabs voice:{" "}
+              {elevenConfigurationError || "voice access is not configured."}
             </strong>
             <span>
-              Add the ElevenLabs key described in <code>.env.example</code>, or explicitly choose Browser fallback below.
+              Add the ElevenLabs key described in <code>.env.example</code>, or
+              explicitly choose Browser fallback below.
             </span>
           </div>
         </section>
@@ -1056,38 +1108,38 @@ export default function Home() {
               voiceMode === "browser" &&
               synthesisSupported &&
               voices.length > 0 && (
-              <label
-                className="voice-assignment"
-                title={
-                  selectedVoiceAvailable
-                    ? "Installed voice lists differ by browser and computer."
-                    : "This saved voice is unavailable here, so an installed fallback will be used."
-                }
-              >
-                <span>Browser voice</span>
-                <select
-                  value={selectedVoiceAvailable ? selectedVoiceURI : ""}
-                  onChange={(event) => {
-                    stopPlayback();
-                    void saveAdvisorVoice(
-                      selectedAdvisor.id,
-                      event.target.value,
-                    );
-                  }}
-                  aria-label={`Stock voice for ${selectedAdvisor.name}`}
+                <label
+                  className="voice-assignment"
+                  title={
+                    selectedVoiceAvailable
+                      ? "Installed voice lists differ by browser and computer."
+                      : "This saved voice is unavailable here, so an installed fallback will be used."
+                  }
                 >
-                  <option value="">Automatic</option>
-                  {voices.map((voice) => (
-                    <option
-                      key={`${voice.voiceURI}-${voice.lang}`}
-                      value={voice.voiceURI}
-                    >
-                      {voice.name} · {voice.lang}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
+                  <span>Browser voice</span>
+                  <select
+                    value={selectedVoiceAvailable ? selectedVoiceURI : ""}
+                    onChange={(event) => {
+                      stopPlayback();
+                      void saveAdvisorVoice(
+                        selectedAdvisor.id,
+                        event.target.value,
+                      );
+                    }}
+                    aria-label={`Stock voice for ${selectedAdvisor.name}`}
+                  >
+                    <option value="">Automatic</option>
+                    {voices.map((voice) => (
+                      <option
+                        key={`${voice.voiceURI}-${voice.lang}`}
+                        value={voice.voiceURI}
+                      >
+                        {voice.name} · {voice.lang}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
             {lastTurn?.reason && (
               <small className="turn-reason" title={lastTurn.reason}>
                 Last turn: {lastTurn.reason}
@@ -1096,6 +1148,47 @@ export default function Home() {
           </div>
 
           <form className="composer" onSubmit={askCouncil}>
+            <div className="model-control-row">
+              <label className="model-control" htmlFor="council-model">
+                <span>Council model</span>
+                <select
+                  id="council-model"
+                  value={modelId}
+                  disabled={!models.some((item) => item.configured)}
+                  onChange={(event) => {
+                    stopPlayback();
+                    setModelId(event.target.value);
+                    try {
+                      window.localStorage.setItem(
+                        MODEL_SELECTION_KEY,
+                        event.target.value,
+                      );
+                    } catch {
+                      // A blocked storage setting must not prevent selecting a model.
+                    }
+                  }}
+                  aria-describedby="model-selection-note"
+                >
+                  {!models.length && (
+                    <option value="">No models available</option>
+                  )}
+                  {models.map((item) => (
+                    <option
+                      key={item.id}
+                      value={item.id}
+                      disabled={!item.configured}
+                    >
+                      {item.provider === "openai" ? "OpenAI" : "Anthropic"} ·{" "}
+                      {item.name}
+                      {!item.configured ? " · key required" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <small id="model-selection-note">
+                Choose the model for your next council turn.
+              </small>
+            </div>
             <label htmlFor="council-message" className="sr-only">
               Message the council
             </label>
@@ -1190,14 +1283,19 @@ export default function Home() {
                     onClick={stopPlayback}
                   >
                     <span aria-hidden="true" />{" "}
-                    {sending && !playbackActive ? "Stop playback" : "Stop"}
+                    {sending ? "Stop response" : "Stop"}
                   </button>
                 )}
               </div>
               <button
                 className="button primary"
                 type="submit"
-                disabled={!draft.trim() || !activeSession || sending}
+                disabled={
+                  !draft.trim() ||
+                  !activeSession ||
+                  sending ||
+                  !selectedModel?.configured
+                }
               >
                 <SparkIcon /> {sending ? "Convening…" : "Ask the council"}
               </button>
@@ -1278,9 +1376,12 @@ export default function Home() {
                 <span className="eyebrow">Meeting notes</span>
                 <h2>Conversation</h2>
               </div>
-              {model && (
-                <span className="model-chip" title={model}>
-                  {model}
+              {(lastTurn?.modelId || modelId || model) && (
+                <span
+                  className="model-chip"
+                  title={lastTurn?.modelId || modelId || model}
+                >
+                  {lastTurn?.modelId || modelId || model}
                 </span>
               )}
             </div>
